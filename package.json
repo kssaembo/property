@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
-    "test": "vitest run"
+    "build": "tsc -b && node scripts/build-viewer.mjs && vite build",
+    "test": "vitest run",
+    "predev": "node scripts/build-viewer.mjs"
   },
   "dependencies": {
     "papaparse": "^5.5.0",

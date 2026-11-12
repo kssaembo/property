@@ -1,3 +1,7 @@
+import Publisher from './Publisher';
+import Classroom, { SeatFacts } from "./Classroom";
+import { groupDefaults, classroomSlots } from "./classroom-layout";
+import "./classroom.css";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   collections,
@@ -50,20 +54,15 @@ export default function App() {
   const [tab, setTab] = useState("배치도");
   const [selected, setSelected] = useState("");
   const [studentId, setStudentId] = useState("");
-  const [period, setPeriod] = useState("");
+  const [draftSeat, setDraftSeat] = useState("");
+  const [groupIndex, setGroupIndex] = useState(0);
   const [modal, setModal] = useState("");
   const [editing, setEditing] = useState<Contract>();
   const [diffs, setDiffs] = useState<Difference[]>();
   const [busy, setBusy] = useState(false);
-  const [editMap, setEditMap] = useState(false);
-  const [positions, setPositions] = useState<
-    Record<string, { x: number; y: number }>
-  >({});
-  const [zoom, setZoom] = useState(100);
   const [filter, setFilter] = useState("");
   const [search, setSearch] = useState("");
   const [csvKind, setCsvKind] = useState<Collection>("properties");
-  const drag = useRef(false);
   const locked = useRef(false);
   useEffect(() => {
     readState()
@@ -90,12 +89,52 @@ export default function App() {
     const t = setInterval(() => setClock((n) => n + 1), 60000);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(""), 2800);
+    return () => clearTimeout(t);
+  }, [notice]);
+  useEffect(() => {
+    if (!modal) return;
+    const previous = document.activeElement as HTMLElement;
+    const t = setTimeout(
+      () =>
+        document
+          .querySelector<HTMLElement>(
+            ".dialog input:not([readonly]),.dialog button",
+          )
+          ?.focus(),
+      0,
+    );
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModal("");
+      if (e.key === "Tab") {
+        const items = [
+          ...document.querySelectorAll<HTMLElement>(
+            ".dialog button:not([disabled]), .dialog input:not([hidden]):not([disabled]), .dialog select:not([disabled]), .dialog textarea",
+          ),
+        ].filter((x) => x.offsetParent !== null);
+        const first = items[0],
+          last = items.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("keydown", handler);
+      previous?.focus();
+    };
+  }, [modal]);
   const d = local?.data;
   const p = d?.properties.find((p) => p.id === selected);
-  const activePeriod = d?.periods.find((p) => p.id === period);
-  const stat = d
-    ? stats(d, activePeriod?.startDate, activePeriod?.endDate)
-    : null;
+  const stat = d ? stats(d) : null;
   const name = (id: string | null | undefined) =>
     d?.students.find((s) => s.id === id)?.name ?? "미지정";
   async function commit(
@@ -135,14 +174,6 @@ export default function App() {
     } finally {
       locked.current = false;
       setBusy(false);
-    }
-  }
-  function attempt(fn: () => void) {
-    try {
-      fn();
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
     }
   }
   async function formSubmit(e: FormEvent<HTMLFormElement>) {
@@ -239,46 +270,15 @@ export default function App() {
         )
           next = setPrice(next, p.id, Number(f.get("amount")));
       }
-      if (modal === "period") {
-        const id = uid(),
-          mode = field(f, "mode");
-        next.periods.push({
-          id,
-          label: field(f, "label"),
-          startDate: field(f, "start"),
-          endDate: field(f, "end"),
-        });
-        extra.periodViews = {
-          ...local.periodViews,
-          [id]: {
-            mode,
-            image: mode === "empty" ? null : local.image,
-            properties:
-              mode === "empty"
-                ? []
-                : clone(d.properties).map((p) =>
-                    mode === "layout"
-                      ? { ...p, ownerId: null, occupantId: null }
-                      : p,
-                  ),
-          },
-        };
-        setPeriod(id);
-      }
-      if (modal === "periodSnapshot" && period) {
-        const old = local.periodViews[period];
-        extra.periodViews = {
-          ...local.periodViews,
-          [period]: {
-            ...old,
-            properties: d.properties
-              .filter((q) => f.has("include-" + q.id))
-              .map((q) => ({
-                ...clone(q),
-                ownerId: field(f, "owner-" + q.id) || null,
-                occupantId: field(f, "owner-" + q.id) || null,
-              })),
-          },
+      if (modal === "group") {
+        const names = [...(local.classroom?.groupNames ?? groupDefaults)];
+        names[groupIndex] = field(f, "groupName").trim();
+        if (!names[groupIndex]) throw Error("모둠 이름을 입력하세요");
+        extra.classroom = {
+          seatCount: 27,
+          animated: true,
+          ...local.classroom,
+          groupNames: names,
         };
       }
       if (modal === "settings") {
@@ -289,10 +289,15 @@ export default function App() {
         )
           throw Error("자료가 있는 학급의 ID는 바꿀 수 없습니다");
         next.classId = classId;
+        extra.classroom = {
+          groupNames: local.classroom?.groupNames ?? groupDefaults,
+          seatCount: 27,
+          animated: f.has("animated"),
+        };
         extra.settings = {
-          price: f.has("price"),
-          owner: f.has("owner"),
-          status: f.has("status"),
+          price: local.settings.price,
+          owner: local.settings.owner,
+          status: local.settings.status,
           autoPrice: f.has("autoPrice"),
         };
       }
@@ -306,7 +311,9 @@ export default function App() {
           extra,
         )
       )
-        setModal("");
+        setModal(
+          ["property", "price", "contract"].includes(modal) ? "seat" : "",
+        );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -325,31 +332,6 @@ export default function App() {
       setError(
         "가져오기 검증 실패: " + (e instanceof Error ? e.message : String(e)),
       );
-    }
-  }
-  async function imageUpload(file: File | undefined) {
-    if (!file || !d) return;
-    try {
-      if (
-        !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
-        file.size > 10 * 1024 * 1024
-      )
-        throw Error("PNG, JPG, WEBP 10MB 이하만 지원합니다");
-      const url = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result));
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = resolve;
-        img.onerror = () => reject(Error("이미지를 읽을 수 없습니다"));
-        img.src = url;
-      });
-      await commit(d, "배치도 업로드", { image: url });
-    } catch (e) {
-      setError(String(e));
     }
   }
   function exportJSON() {
@@ -396,10 +378,7 @@ export default function App() {
       (!search ||
         d.properties
           .find((p) => p.id === c.propertyId)
-          ?.seatNumber.includes(search)) &&
-      (!activePeriod ||
-        (c.contractDate >= activePeriod.startDate &&
-          c.contractDate <= activePeriod.endDate)),
+          ?.seatNumber.includes(search)),
   );
   const options = (
     <>
@@ -488,7 +467,11 @@ export default function App() {
     <>
       <header>
         <div className="brand">
-          <span className="logo">▦</span>
+          <img
+            className="brand-icon"
+            src={"./" + "classroom-icon.png"}
+            alt="책상과 열쇠 모양 거래소 아이콘"
+          />
           <div>
             <strong>우리 반 부동산 거래소</strong>
             <small>CLASSROOM PROPERTY EXCHANGE</small>
@@ -502,394 +485,57 @@ export default function App() {
           <button onClick={() => setModal("settings")}>설정</button>
         </div>
       </header>
-      <main>
-        <section className="heading">
-          <div>
-            <span className="eyebrow">우리 교실의 작은 부동산 시장</span>
-            <h1>한눈에 보는 우리 반 자리</h1>
-            <p>자리의 가치부터 계약의 기록까지, 차근차근 관리해요.</p>
-          </div>
-          <div className="period">
-            <select
-              aria-label="거래 기간"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-            >
-              <option value="">전체 거래 기간</option>
-              {d.periods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            <button onClick={() => setModal("period")}>＋ 새 기간</button>
-          </div>
-        </section>
-        <section className="metrics">
-          {[
-            ["전체 자리", stat.seats, "개"],
-            ["평균 시세", num(stat.averageMarket), "권"],
-            ["최고 매매가", num(stat.max), "권"],
-            ["기간 거래", stat.count, "건"],
-          ].map(([label, value, unit]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <strong>
-                {value}
-                <small>{unit}</small>
-              </strong>
-            </div>
-          ))}
-        </section>
-        <div className="notice">
-          로그인 없이 사용하는 로컬 전용 서비스입니다. 다른 기기와 자동 공유되지
-          않으며, 브라우저 데이터 삭제 전 JSON과 배치도 이미지를 백업하세요.
-        </div>
-        {error && (
-          <div role="alert" className="error">
-            {error}
-            <button onClick={() => setError("")}>닫기</button>
-          </div>
-        )}
-        {notice && (
-          <div role="status" className="success">
-            {notice}
-          </div>
-        )}
-        <nav>
+      <main className="app-main">
+        <nav className="view-tabs" aria-label="화면 선택">
           {[
             "배치도",
             "전체 부동산",
             "학생별 현황",
             "거래 내역",
-            "기간별 통계",
             "변경 이력",
-          ].map((t) => (
+          ].map((t, i) => (
             <button
+              key={t}
               className={tab === t ? "active" : ""}
               onClick={() => setTab(t)}
-              key={t}
             >
-              {t}
+              <span>{["▦", "▤", "♙", "⇄", "◷"][i]}</span>
+              {t === "배치도" ? "우리 교실" : t}
             </button>
           ))}
+          <span className="tab-summary">
+            평균 시세 <b>{num(stat.averageMarket)}권</b>
+          </span>
         </nav>
-        {tab === "배치도" && (
-          <div className="workspace">
-            <section className="panel map-panel">
-              <div className="panel-head">
-                <div>
-                  <h2>교실 자리 배치도</h2>
-                  <small>자리를 선택하면 상세정보를 볼 수 있어요.</small>
-                </div>
-                <div className="actions">
-                  <label className="button">
-                    이미지 {local.image ? "교체" : "업로드"}
-                    <input
-                      hidden
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      onChange={(e) => imageUpload(e.target.files?.[0])}
-                    />
-                  </label>
-                  <button
-                    onClick={() => {
-                      setEditMap(!editMap);
-                      setPositions(
-                        Object.fromEntries(
-                          d.properties
-                            .filter((p) => p.position)
-                            .map((p) => [p.id, p.position!]),
-                        ),
-                      );
-                    }}
-                  >
-                    {" "}
-                    {editMap ? "편집 취소" : "위치 편집"}
-                  </button>
-                </div>
-              </div>
-              {editMap && (
-                <div className="map-tools">
-                  <select
-                    aria-label="배치할 자리"
-                    value={selected}
-                    onChange={(e) => setSelected(e.target.value)}
-                  >
-                    <option value="">배치할 자리 선택</option>
-                    {d.properties.map((p) => (
-                      <option value={p.id} key={p.id}>
-                        {p.seatNumber}번
-                      </option>
-                    ))}
-                  </select>
-                  <span>이미지 클릭 또는 마커 드래그</span>
-                  <button
-                    onClick={async () => {
-                      const next = clone(d);
-                      next.properties.forEach((p) => {
-                        if (positions[p.id]) {
-                          p.position = positions[p.id];
-                          p.revision++;
-                          p.updatedAt = new Date().toISOString();
-                        }
-                      });
-                      if (await commit(next, "자리 위치 저장"))
-                        setEditMap(false);
-                    }}
-                  >
-                    위치 저장
-                  </button>
-                </div>
-              )}
-              <div className="map-scroll">
-                <div
-                  className="map"
-                  style={{ width: zoom + "%" }}
-                  onPointerDown={(e) => {
-                    if (!editMap || !selected || !local.image) return;
-                    drag.current = true;
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    const r = e.currentTarget.getBoundingClientRect();
-                    setPositions((v) => ({
-                      ...v,
-                      [selected]: {
-                        x: Math.max(
-                          0,
-                          Math.min(1, (e.clientX - r.left) / r.width),
-                        ),
-                        y: Math.max(
-                          0,
-                          Math.min(1, (e.clientY - r.top) / r.height),
-                        ),
-                      },
-                    }));
-                  }}
-                  onPointerMove={(e) => {
-                    if (!drag.current || !editMap || !selected) return;
-                    const r = e.currentTarget.getBoundingClientRect();
-                    setPositions((v) => ({
-                      ...v,
-                      [selected]: {
-                        x: Math.max(
-                          0,
-                          Math.min(1, (e.clientX - r.left) / r.width),
-                        ),
-                        y: Math.max(
-                          0,
-                          Math.min(1, (e.clientY - r.top) / r.height),
-                        ),
-                      },
-                    }));
-                  }}
-                  onPointerUp={() => (drag.current = false)}
-                  onPointerCancel={() => (drag.current = false)}
-                >
-                  {local.image ? (
-                    <img
-                      src={local.image}
-                      alt="교실 자리 배치도"
-                      draggable={false}
-                    />
-                  ) : (
-                    <div className="empty">
-                      <span className="empty-icon">▦</span>
-                      <h3>우리 교실의 배치도를 올려주세요</h3>
-                      <p>
-                        학생과 자리를 등록한 뒤,
-                        <br />
-                        이미지 위에 자리 마커를 배치할 수 있어요.
-                      </p>
-                      <label className="button primary">
-                        배치도 이미지 선택
-                        <input
-                          hidden
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          onChange={(e) => imageUpload(e.target.files?.[0])}
-                        />
-                      </label>
-                      <small>PNG · JPG · WEBP / 최대 10MB</small>
-                    </div>
-                  )}
-                  {local.image &&
-                    d.properties.map((q) => {
-                      const pos = editMap ? positions[q.id] : q.position;
-                      if (!pos) return null;
-                      const state = stateAt(d, q);
-                      return (
-                        <button
-                          aria-label={`${q.seatNumber}번 자리`}
-                          className={
-                            "marker " +
-                            (q.id === selected ? "selected " : "") +
-                            (state.lease ? "leased" : "")
-                          }
-                          style={{
-                            left: pos.x * 100 + "%",
-                            top: pos.y * 100 + "%",
-                          }}
-                          key={q.id}
-                          onPointerDown={(e) => {
-                            if (editMap) {
-                              e.stopPropagation();
-                              setSelected(q.id);
-                              drag.current = true;
-                              e.currentTarget.parentElement!.setPointerCapture(
-                                e.pointerId,
-                              );
-                            }
-                          }}
-                          onClick={() => setSelected(q.id)}
-                        >
-                          <b>{q.seatNumber}</b>
-                          {local.settings.price && (
-                            <span>{num(q.marketPrice)}권</span>
-                          )}
-                          {local.settings.owner && (
-                            <small>{name(state.ownerId)}</small>
-                          )}
-                          {local.settings.status && (
-                            <small>
-                              {state.lease
-                                ? labels[state.lease.type]
-                                : "소유자 사용"}
-                            </small>
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-              <div className="map-footer">
-                <span>
-                  ● 소유자 사용　<span className="orange">● 임대 중</span>
-                </span>
-                <label>
-                  확대{" "}
-                  <input
-                    aria-label="배치도 확대"
-                    type="range"
-                    min="100"
-                    max="200"
-                    value={zoom}
-                    onChange={(e) => setZoom(+e.target.value)}
-                  />
-                  {zoom}%
-                </label>
-              </div>
-            </section>
-            <aside className="panel detail">
-              <div className="panel-head">
-                <h2>{p ? `${p.seatNumber}번 자리` : "자리 상세정보"}</h2>
-                <button
-                  onClick={() => {
-                    setSelected("");
-                    setModal("property");
-                  }}
-                >
-                  ＋ 자리
-                </button>
-              </div>
-              {p ? (
-                <>
-                  <div className="price">
-                    <small>현재 시세</small>
-                    <strong>
-                      {num(p.marketPrice)} <span>권</span>
-                    </strong>
-                    <button onClick={() => setModal("price")}>시세 수정</button>
-                  </div>
-                  <dl>
-                    <dt>현재 소유자</dt>
-                    <dd>{name(stateAt(d, p).ownerId)}</dd>
-                    <dt>현재 사용자</dt>
-                    <dd>{name(stateAt(d, p).occupantId)}</dd>
-                    <dt>최초 낙찰가격</dt>
-                    <dd>{num(p.auctionPrice)}권</dd>
-                    <dt>최근 매매가격</dt>
-                    <dd>{num(stateAt(d, p).latestSalePrice)}권</dd>
-                    <dt>계약 상태</dt>
-                    <dd>
-                      {stateAt(d, p).lease
-                        ? labels[stateAt(d, p).lease!.type]
-                        : "소유자 사용"}
-                    </dd>
-                  </dl>
-                  <button
-                    className="primary wide"
-                    onClick={() => {
-                      setEditing(undefined);
-                      setModal("contract");
-                    }}
-                  >
-                    ＋ 계약 등록
-                  </button>
-                  <button className="wide" onClick={() => setModal("property")}>
-                    자리 정보 수정
-                  </button>
-                  <h3>시세 흐름</h3>
-                  <PriceChart
-                    values={d.marketHistory
-                      .filter((m) => m.propertyId === p.id)
-                      .sort((a, b) => a.recordedAt.localeCompare(b.recordedAt))
-                      .map((m) => m.price)}
-                  />
-                  <small className="id">자리 ID: {p.id}</small>
-                  <h3>계약 기록</h3>
-                  {d.contracts
-                    .filter((c) => c.propertyId === p.id)
-                    .map((c) => (
-                      <button
-                        className="history-item"
-                        key={c.id}
-                        onClick={() => {
-                          setEditing(c);
-                          setModal("contract");
-                        }}
-                      >
-                        {labels[c.type]} · {num(c.amount)}권{" "}
-                        <small>
-                          {c.contractDate} · {labels[c.status]}
-                        </small>
-                      </button>
-                    ))}
-                </>
-              ) : (
-                <div className="empty small">
-                  <span className="empty-icon">⌖</span>
-                  <h3>어떤 자리가 궁금한가요?</h3>
-                  <p>
-                    배치도 또는 전체 부동산에서
-                    <br />
-                    자리를 선택해 주세요.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setStudentId("");
-                      setModal("student");
-                    }}
-                  >
-                    먼저 학생 등록
-                  </button>
-                </div>
-              )}
-            </aside>
+        {error && (
+          <div className="floating-alert error" role="alert">
+            {error}
+            <button onClick={() => setError("")}>닫기</button>
           </div>
+        )}
+        {notice && (
+          <div className="toast" role="status">
+            ✓ {notice}
+          </div>
+        )}
+        {tab === "배치도" && (
+          <Classroom
+            local={local}
+            onGroup={(i) => {
+              setGroupIndex(i);
+              setModal("group");
+            }}
+            onSeat={(slot) => {
+              setSelected(slot.property?.id ?? "");
+              setDraftSeat(slot.number);
+              setModal(slot.property ? "seat" : "property");
+            }}
+          />
         )}
         {tab === "전체 부동산" && (
           <section className="panel">
             <div className="panel-head">
               <h2>전체 부동산 · {d.properties.length}</h2>
-              <button
-                className="primary"
-                onClick={() => {
-                  setSelected("");
-                  setModal("property");
-                }}
-              >
-                ＋ 자리 등록
-              </button>
             </div>
             <div className="table-wrap">
               <table>
@@ -901,7 +547,7 @@ export default function App() {
                     <th>시세</th>
                     <th>최초 낙찰가</th>
                     <th>최근 매매가</th>
-                    <th>위치</th>
+                    <th>모둠</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -911,7 +557,7 @@ export default function App() {
                         <button
                           onClick={() => {
                             setSelected(q.id);
-                            setTab("배치도");
+                            setModal("seat");
                           }}
                         >
                           {q.seatNumber}번 →
@@ -922,7 +568,13 @@ export default function App() {
                       <td>{num(q.marketPrice)}권</td>
                       <td>{num(q.auctionPrice)}권</td>
                       <td>{num(stateAt(d, q).latestSalePrice)}권</td>
-                      <td>{q.position ? "배치됨" : "미배치"}</td>
+                      <td>
+                        {(local.classroom?.groupNames ?? groupDefaults)[
+                          classroomSlots(d.properties).find(
+                            (s) => s.property?.id === q.id,
+                          )?.group ?? 6
+                        ] ?? "추가 자리"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1047,60 +699,6 @@ export default function App() {
             {renderContracts(contracts)}
           </section>
         )}
-        {tab === "기간별 통계" && (
-          <section className="panel">
-            <div className="panel-head">
-              <h2>{activePeriod?.label ?? "전체 기간"} 통계</h2>
-              <button onClick={() => setModal("period")}>＋ 기간 만들기</button>
-            </div>
-            <div className="statistics">
-              {[
-                ["매매 완료 자리", stat.sold],
-                ["전세 계약", stat.jeonse],
-                ["월세 계약", stat.rent],
-                ["현재 임대 자리", stat.leased],
-                ["평균 매매가격", num(stat.averageSale) + "권"],
-                ["최저 매매가격", num(stat.min) + "권"],
-              ].map(([k, v]) => (
-                <div key={k}>
-                  <small>{k}</small>
-                  <strong>{v}</strong>
-                </div>
-              ))}
-            </div>
-            <p className="padded">
-              계약 통계는 계약일 기준이며 취소 계약을 제외합니다. 현재 시세와
-              임대 현황은 오늘 기준입니다. 기간 변경은 실제 계약에 영향을 주지
-              않습니다.
-            </p>
-            {period && local.periodViews[period] && (
-              <div className="padded">
-                <h3>
-                  기간 시작 참고 현황{" "}
-                  <button onClick={() => setModal("periodSnapshot")}>
-                    현황 편집
-                  </button>
-                </h3>
-                <p>
-                  생성 당시의 배치도·소유 현황을 별도로 보존합니다. 실제
-                  소유권은 계약으로 관리합니다.
-                </p>
-                {local.periodViews[period].image && (
-                  <img
-                    className="snapshot"
-                    src={local.periodViews[period].image!}
-                    alt="기간 생성 당시 배치도"
-                  />
-                )}
-                <p>
-                  {local.periodViews[period].properties
-                    .map((p) => `${p.seatNumber}번: ${name(p.ownerId)}`)
-                    .join(" / ") || "빈 현황"}
-                </p>
-              </div>
-            )}
-          </section>
-        )}
         {tab === "변경 이력" && (
           <section className="panel">
             <div className="panel-head">
@@ -1135,12 +733,6 @@ export default function App() {
               ))}
           </section>
         )}
-        <footer>
-          우리 반 부동산 거래소{" "}
-          <span>
-            금액 단위: 권 · 실제 송금과 전세금 반환은 ClassBank에서 별도 처리
-          </span>
-        </footer>
       </main>
       {modal && (
         <div
@@ -1151,7 +743,7 @@ export default function App() {
           }}
         >
           <section
-            className={"dialog " + (modal === "import" ? "large" : "")}
+            className={"dialog " + (modal === "import" ? "large" : modal === "publish" ? "publish-dialog" : "")}
             role="dialog"
             aria-modal="true"
             aria-label="정보 관리"
@@ -1161,11 +753,13 @@ export default function App() {
               <h2>
                 {
                   {
-                    periodSnapshot: "기간 시작 현황 편집",
+                    seat: `${p?.seatNumber ?? draftSeat}번 자리`,
+                    group: "모둠 이름 바꾸기",
+                    publish: "읽기 전용 게시",
                     student: "학생 등록·수정",
-                    property: "자리 등록·수정",
+                    property: `${p?.seatNumber ?? draftSeat}번 자리 · 소유 정보`,
                     contract: "계약 등록·수정",
-                    period: "새 거래 기간",
+
                     settings: "거래소 설정",
                     price: "시세 수정",
                     transfer: "파일 가져오기 · 내보내기",
@@ -1182,7 +776,33 @@ export default function App() {
                 {error}
               </div>
             )}
-            {modal === "transfer" ? (
+            {modal === "seat" && p ? (
+              <div className="seat-dialog-content">
+                <SeatFacts data={d} property={p} />
+                <div className="seat-dialog-actions">
+                  <button
+                    className="primary"
+                    onClick={() => {
+                      setEditing(undefined);
+                      setModal("contract");
+                    }}
+                  >
+                    ＋ 계약 입력
+                  </button>
+                  <button onClick={() => setModal("price")}>시세 수정</button>
+                  <button onClick={() => setModal("property")}>
+                    소유 정보
+                  </button>
+                </div>
+                <h3>이 자리의 계약</h3>
+                {renderContracts(
+                  d.contracts.filter((c) => c.propertyId === p.id),
+                )}
+                <small>자리 ID · {p.id}</small>
+              </div>
+            ) : modal === "publish" ? (
+              <Publisher local={local}/>
+            ) : modal === "transfer" ? (
               <div className="form">
                 <p>
                   현재 필터와 관계없이 학급 전체 자료를 내보냅니다. 공통
@@ -1285,6 +905,7 @@ export default function App() {
                               ...b.state.settings,
                             },
                             periodViews: b.state.periodViews ?? {},
+                            classroom: b.state.classroom,
                             audits: Array.isArray(b.state.audits)
                               ? b.state.audits
                               : [],
@@ -1391,40 +1012,20 @@ export default function App() {
               </div>
             ) : (
               <form className="form" onSubmit={formSubmit}>
-                {modal === "periodSnapshot" && (
-                  <>
-                    <p>
-                      이 기간의 기준 현황만 설정합니다. 실제 계약과 현재
-                      소유권은 그대로 유지됩니다.
-                    </p>
-                    {d.properties.map((q) => (
-                      <div key={q.id}>
-                        <label className="check">
-                          <input
-                            type="checkbox"
-                            name={"include-" + q.id}
-                            defaultChecked={local.periodViews[
-                              period
-                            ]?.properties.some((s) => s.id === q.id)}
-                          />
-                          {q.seatNumber}번 자리 포함
-                        </label>
-                        <label>
-                          기준 소유자
-                          <select
-                            name={"owner-" + q.id}
-                            defaultValue={
-                              local.periodViews[period]?.properties.find(
-                                (s) => s.id === q.id,
-                              )?.ownerId ?? ""
-                            }
-                          >
-                            {options}
-                          </select>
-                        </label>
-                      </div>
-                    ))}
-                  </>
+                {modal === "group" && (
+                  <label>
+                    모둠 이름
+                    <input
+                      name="groupName"
+                      maxLength={20}
+                      required
+                      defaultValue={
+                        local.classroom?.groupNames[groupIndex] ??
+                        groupDefaults[groupIndex]
+                      }
+                    />
+                    <small>이 교실과 전체 백업에 함께 저장됩니다.</small>
+                  </label>
                 )}
                 {modal === "student" && (
                   <label>
@@ -1441,12 +1042,27 @@ export default function App() {
                 )}
                 {modal === "property" && (
                   <>
+                    {!d.students.length && (
+                      <div className="setup-tip">
+                        먼저 학생을 등록해 주세요.{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStudentId("");
+                            setModal("student");
+                          }}
+                        >
+                          학생 등록
+                        </button>
+                      </div>
+                    )}
                     <label>
                       자리번호
                       <input
                         name="seat"
                         required
-                        defaultValue={p?.seatNumber}
+                        defaultValue={p?.seatNumber ?? draftSeat}
+                        readOnly
                       />
                     </label>
                     <label>
@@ -1509,51 +1125,29 @@ export default function App() {
                     <small>최근 매매가격은 바뀌지 않습니다.</small>
                   </label>
                 )}
-                {modal === "period" && (
-                  <>
-                    <label>
-                      기간 이름
-                      <input name="label" placeholder="2026년 11월" required />
-                    </label>
-                    <label>
-                      시작일
-                      <input
-                        name="start"
-                        type="date"
-                        required
-                        defaultValue={today()}
-                      />
-                    </label>
-                    <label>
-                      종료일
-                      <input
-                        name="end"
-                        type="date"
-                        required
-                        defaultValue={today()}
-                      />
-                    </label>
-                    <label>
-                      기간 시작 참고 현황
-                      <select name="mode">
-                        <option value="carry">
-                          배치도와 소유 현황 이어서 사용
-                        </option>
-                        <option value="layout">
-                          배치도만 복사 (소유 미지정)
-                        </option>
-                        <option value="empty">완전히 빈 현황</option>
-                      </select>
-                    </label>
-                    <small>
-                      이 선택은 기간 시작 스냅샷입니다. 실제 소유권과 계약은
-                      유지됩니다. 초기화가 필요한 새 학급은 별도 브라우저
-                      프로필을 사용하세요.
-                    </small>
-                  </>
-                )}
                 {modal === "settings" && (
                   <>
+                    <section className="publish-option">
+                      <b>웹 게시</b>
+                      <p>
+                        로컬 장부를 유지하면서 읽기 전용 교실을 별도로 게시합니다.
+                      </p>
+                      <button type="button" onClick={() => setModal("publish")}>
+                        읽기 전용 게시본 만들기
+                      </button>
+                    </section>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        name="animated"
+                        defaultChecked={local.classroom?.animated !== false}
+                      />
+                      교실 친구들의 움직임과 말풍선
+                    </label>
+                    <p className="storage-note">
+                      자료는 이 브라우저에 저장됩니다. 기기를 바꾸거나 브라우저
+                      자료를 지우기 전에 전체 백업을 보관하세요.
+                    </p>
                     <label>
                       학급 ID
                       <input
@@ -1567,25 +1161,14 @@ export default function App() {
                         자료가 생기면 변경할 수 없습니다.
                       </small>
                     </label>
-                    {(["price", "owner", "status", "autoPrice"] as const).map(
-                      (key, i) => (
-                        <label className="check" key={key}>
-                          <input
-                            type="checkbox"
-                            name={key}
-                            defaultChecked={local.settings[key]}
-                          />
-                          {
-                            [
-                              "마커 시세 표시",
-                              "마커 소유자 표시",
-                              "마커 임대차 상태 표시",
-                              "매매 등록·수정 시 시세 자동 반영",
-                            ][i]
-                          }
-                        </label>
-                      ),
-                    )}
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        name="autoPrice"
+                        defaultChecked={local.settings.autoPrice}
+                      />
+                      매매 등록·수정 시 시세 자동 반영
+                    </label>
                   </>
                 )}
                 <button type="submit" className="primary" disabled={busy}>
@@ -1762,38 +1345,6 @@ function ContractFields({
       </label>
       <small>
         임대 종료일은 사용일에 포함됩니다. 자동송금·자동환급은 하지 않습니다.
-      </small>
-    </>
-  );
-}
-function PriceChart({ values }: { values: number[] }) {
-  if (!values.length) return <small>시세 기록이 없습니다.</small>;
-  const max = Math.max(1, ...values),
-    min = Math.min(...values);
-  const points = values
-    .map(
-      (v, i) =>
-        `${10 + (i * 260) / Math.max(1, values.length - 1)},${70 - ((v - min) / Math.max(1, max - min)) * 55}`,
-    )
-    .join(" ");
-  return (
-    <>
-      <svg
-        viewBox="0 0 280 85"
-        role="img"
-        aria-label={"시세 변화: " + values.join(", ")}
-      >
-        <path d="M10 75 H270" stroke="#dce5de" />
-        <polyline
-          points={points}
-          fill="none"
-          stroke="#367661"
-          strokeWidth="3"
-        />
-        {values.length === 1 && <circle cx="10" cy="70" r="3" fill="#367661" />}
-      </svg>
-      <small>
-        {num(values[0])}권 → {num(values.at(-1))}권
       </small>
     </>
   );

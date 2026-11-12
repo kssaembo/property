@@ -17,6 +17,7 @@ export type LocalState = {
   settings: Settings;
   audits: Audit[];
   sequence: number;
+  classroom?: { groupNames: string[]; seatCount: 27 | 30; animated: boolean };
   periodViews: Record<
     string,
     { image: string | null; properties: Exchange["properties"]; mode: string }
