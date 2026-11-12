@@ -1,0 +1,47 @@
+{
+  "format": "classbank-property-exchange",
+  "schemaVersion": "1.0.0",
+  "classId": "sample-class",
+  "exportId": "3e20f88c-b2d9-44da-b9bf-f476a43af360",
+  "exportedAt": "2026-11-12T06:33:40.739Z",
+  "source": "property-service",
+  "students": [
+    {
+      "id": "sample-student-a",
+      "name": "예시 학생 A"
+    },
+    {
+      "id": "sample-student-b",
+      "name": "예시 학생 B"
+    }
+  ],
+  "properties": [
+    {
+      "id": "sample-seat-1",
+      "seatNumber": "1",
+      "ownerId": "sample-student-a",
+      "occupantId": "sample-student-a",
+      "auctionPrice": 100,
+      "latestSalePrice": null,
+      "marketPrice": 130,
+      "position": {
+        "x": 0.3,
+        "y": 0.4
+      },
+      "revision": 1,
+      "initialOwnerId": "sample-student-a",
+      "initialSalePrice": null
+    }
+  ],
+  "contracts": [],
+  "transactions": [],
+  "marketHistory": [],
+  "periods": [
+    {
+      "id": "sample-period-1",
+      "label": "예시 기간",
+      "startDate": "2026-11-01",
+      "endDate": "2026-11-30"
+    }
+  ]
+}

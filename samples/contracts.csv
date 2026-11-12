@@ -1,0 +1,2 @@
+﻿id,propertyId,type,buyerId,sellerId,landlordId,tenantId,amount,paymentCycle,contractDate,startDate,endDate,terms,status,revision
+sample-contract-1,sample-seat-1,sale,sample-student-b,sample-student-a,null,null,120,null,2026-11-12,2026-11-12,null,,active,1

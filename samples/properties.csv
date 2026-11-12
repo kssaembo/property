@@ -1,0 +1,2 @@
+﻿id,seatNumber,ownerId,occupantId,auctionPrice,latestSalePrice,marketPrice,position,revision
+sample-seat-1,1,sample-student-a,sample-student-a,100,null,130,"{""x"":0.3,""y"":0.4}",1
