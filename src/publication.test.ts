@@ -173,7 +173,7 @@ describe("Ambient classroom", () => {
           expect(x.x).toBeGreaterThanOrEqual(80);
           expect(x.x).toBeLessThanOrEqual(1160);
           expect(x.y).toBeGreaterThanOrEqual(180);
-          expect(x.y).toBeLessThanOrEqual(620);
+          expect(x.y).toBeLessThanOrEqual(720);
         });
       }
     expect(seen.has("read")).toBe(true);

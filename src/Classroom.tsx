@@ -144,7 +144,7 @@ export default function Classroom({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [spread, setSpread] = useState(1);
+  const spread = 1; // Keep furniture and room proportions independent of viewport width.
   const [hover, setHover] = useState<DeskSlot>();
   const room = local.classroom;
   const data = local.data;
@@ -154,8 +154,8 @@ export default function Classroom({
   const animated = room?.animated !== false;
   const height =
     data.properties.length > count
-      ? 720 + Math.ceil((data.properties.length - count) / 8) * 82
-      : 720;
+      ? 800 + Math.ceil((data.properties.length - count) / 8) * 82
+      : 800;
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => {
       const next = Math.max(
@@ -166,7 +166,7 @@ export default function Classroom({
         ),
       );
       setScale(next);
-      setSpread(Math.max(1, entry.contentRect.width / next / 1200));
+
     });
     if (box.current) observer.observe(box.current);
     return () => observer.disconnect();
@@ -220,8 +220,8 @@ export default function Classroom({
                 {
                   left: (145 + (2 - (i % 3)) * 325) * spread,
                   width: 278 * spread,
-                  top: i < 3 ? 429 : 184,
-                  height: i < 3 ? 177 : 242,
+                  top: i < 3 ? 510 : 270,
+                  height: i < 3 ? 180 : 235,
                   "--group-color": colors[i],
                 } as CSSProperties
               }

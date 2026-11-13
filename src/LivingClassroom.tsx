@@ -49,10 +49,10 @@ export default function LivingClassroom({
   const pair = Math.floor(elapsed / 13) % 4;
   return (
     <>
-      <div className="life-phase" aria-label="가상 교실 활동">
+      <div className="life-phase" aria-label="자동으로 바뀌는 교실 활동">
         <i />
         {!enabled || reduced ? "잠시 쉬는 교실" : phases[phase]}
-        <small>가상의 친구들</small>
+        <small>{!enabled || reduced ? "활동 일시 정지" : "자동 전환 중 · 활동 안내"}</small>
       </div>
       {actors.map((a) => {
         const pose =
@@ -109,3 +109,4 @@ export default function LivingClassroom({
     </>
   );
 }
+

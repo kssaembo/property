@@ -44,8 +44,8 @@ export const conversations = [
   ["고양이는 무슨 꿈을 꿀까?", "아마 햇볕에서 낮잠 자는 꿈?"],
 ];
 const xs = [110, 450, 775, 1110],
-  ys = [186, 432, 617];
-export const visualY = (y: number) => 130 + y * 0.78;
+  ys = [292, 510, 710];
+export const visualY = (y: number) => 210 + y * 0.78;
 const nearest = (arr: number[], n: number) =>
   arr.reduce((a, b) => (Math.abs(n - b) < Math.abs(n - a) ? b : a));
 // All free movement uses the perimeter/cross-aisles; seat approaches end at a chair.
@@ -70,7 +70,7 @@ export function createActors(): Actor[] {
   return Array.from({ length: 8 }, (_, id) => ({
     id,
     x: xs[id % 4] + (id >= 4 ? 28 : 0),
-    y: id >= 4 ? 617 : 432,
+    y: id >= 4 ? 710 : 510,
     path: [],
     activity: "watch",
     destination: "watch",
@@ -80,14 +80,14 @@ export function createActors(): Actor[] {
   }));
 }
 const seatSpots: Point[] = [
-  { x: 360, y: 216 },
-  { x: 685, y: 216 },
-  { x: 1010, y: 216 },
-  { x: 226, y: 452 },
-  { x: 551, y: 452 },
-  { x: 876, y: 452 },
-  { x: 360, y: 452 },
-  { x: 1010, y: 452 },
+  { x: 360, y: 305 },
+  { x: 685, y: 305 },
+  { x: 1010, y: 305 },
+  { x: 226, y: 545 },
+  { x: 551, y: 545 },
+  { x: 876, y: 545 },
+  { x: 360, y: 545 },
+  { x: 1010, y: 545 },
 ];
 export function chooseDestination(
   actor: Actor,
@@ -105,28 +105,28 @@ export function chooseDestination(
   if (phase === 2) return { point: seatSpots[actor.id], activity: "listen" };
   if (phase === 3)
     return {
-      point: { x: xs[actor.id % 4], y: actor.id >= 4 ? 617 : 432 },
+      point: { x: xs[actor.id % 4], y: actor.id >= 4 ? 710 : 510 },
       activity: "stretch",
     };
   if (phase === 4)
     return {
-      point: { x: actor.id % 4 < 2 ? 450 : 775, y: actor.id >= 4 ? 617 : 432 },
+      point: { x: actor.id % 4 < 2 ? 450 : 775, y: actor.id >= 4 ? 710 : 510 },
       activity: "chat",
     };
   if (phase === 5)
     return {
-      point: { x: xs[actor.id % 4] + (actor.id >= 4 ? 35 : 0), y: 186 },
+      point: { x: xs[actor.id % 4] + (actor.id >= 4 ? 35 : 0), y: 292 },
       activity: actor.id % 3 === 0 ? "water" : "watch",
     };
   const spots = [
     { x: 110, y: 560 },
     { x: 1110, y: 565 },
-    { x: 450, y: 432 },
-    { x: 775, y: 432 },
-    { x: 450, y: 617 },
-    { x: 775, y: 617 },
-    { x: 110, y: 186 },
-    { x: 1110, y: 186 },
+    { x: 450, y: 510 },
+    { x: 775, y: 510 },
+    { x: 450, y: 710 },
+    { x: 775, y: 710 },
+    { x: 110, y: 292 },
+    { x: 1110, y: 292 },
   ];
   return {
     point: spots[Math.floor(random() * spots.length)],

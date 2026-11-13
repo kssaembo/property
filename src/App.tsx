@@ -385,7 +385,7 @@ export default function App() {
       <option value="">미지정</option>
       {d.students.map((s) => (
         <option key={s.id} value={s.id}>
-          {s.name} · {s.id.slice(0, 8)}
+          {s.name}
         </option>
       ))}
     </>
